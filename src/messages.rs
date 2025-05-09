@@ -1,0 +1,363 @@
+use core::f32;
+
+use crate::app::{LogLoadError, LogLoadSuccess, LogoscopeApp, SCROLL_END};
+use crate::tab::Tab;
+use crate::theme::AppTheme;
+use copypasta::{ClipboardContext, ClipboardProvider};
+use iced::Task;
+use iced::event::Event;
+use iced::keyboard::key;
+use iced::{keyboard, mouse};
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    None,
+    ToggleMultiselect(bool),
+    ToggleTail(bool),
+    TailUpdate(Tab),
+    FilterChanged(String),
+    FilterUpdate(Option<Tab>),
+    SearchChanged(String),
+    FileOpen,
+    FileOpened(Result<Vec<LogLoadSuccess>, LogLoadError>),
+    Scrolled(f32),
+    RowClicked(usize),
+    TabChanged(usize),
+    TabClosed(usize),
+    Event(Event),
+    PrevTheme,
+    ThemeChanged(AppTheme),
+    NextTheme,
+    PrevSession,
+    SessionChanged(usize),
+    NextSession,
+    TextSizeIncrease,
+    TextSizeDecrease,
+}
+
+impl Message {
+    pub fn handle(self, app: &mut LogoscopeApp) -> Task<Message> {
+        match self {
+            Message::NextSession => {
+                let Some(current_tab) = app.get_current_tab_mut() else {
+                    return Task::none();
+                };
+                current_tab.current_session = current_tab
+                    .current_session
+                    .saturating_add(1)
+                    .clamp(0, current_tab.sessions.len().saturating_sub(1))
+            }
+            Message::PrevSession => {
+                let Some(current_tab) = app.get_current_tab_mut() else {
+                    return Task::none();
+                };
+                current_tab.current_session = current_tab
+                    .current_session
+                    .saturating_sub(1)
+                    .clamp(0, current_tab.sessions.len().saturating_sub(1))
+            }
+            Message::SessionChanged(curr_session) => {
+                let Some(current_tab) = app.get_current_tab_mut() else {
+                    return Task::none();
+                };
+                current_tab.current_session = curr_session;
+            }
+            Message::PrevTheme => {
+                app.theme = (app.theme.clone() as usize)
+                    .saturating_sub(1)
+                    .clamp(0, AppTheme::ALL.len() - 1)
+                    .into();
+            }
+            Message::ThemeChanged(theme) => {
+                app.theme = theme;
+            }
+            Message::NextTheme => {
+                app.theme = (app.theme.clone() as usize)
+                    .saturating_add(1)
+                    .clamp(0, AppTheme::ALL.len() - 1)
+                    .into();
+            }
+            Message::ToggleTail(tail_enabled) => {
+                app.tail_enabled = tail_enabled;
+                if app.tail_enabled {
+                    let mut tail_tasks = Vec::new();
+                    for tab in &app.tabs {
+                        tail_tasks.push(Task::perform(
+                            Tab::tail(tab.clone(), app.filters.clone()),
+                            Message::TailUpdate,
+                        ));
+                    }
+
+                    return tail_tasks
+                        .into_iter()
+                        .reduce(|acc, task| acc.chain(task))
+                        .unwrap_or(Task::none());
+                }
+            }
+            Message::TailUpdate(new_tab) => {
+                if !app.tail_enabled {
+                    return Task::none();
+                }
+
+                for tab in &mut app.tabs {
+                    if tab.file_size != new_tab.file_size && tab.file == new_tab.file {
+                        *tab = new_tab.clone();
+                    }
+                }
+
+                return Task::perform(
+                    Tab::tail(new_tab.clone(), app.filters.clone()),
+                    Message::TailUpdate,
+                );
+            }
+            Message::ToggleMultiselect(multiselect_enabled) => {
+                app.multiselect_enabled = multiselect_enabled;
+            }
+            Message::FilterChanged(filters) => {
+                app.filters = filters.split(',').map(|str| str.to_owned()).collect();
+                let mut tab_reload_tasks = Vec::new();
+                for tab in &mut app.tabs {
+                    tab_reload_tasks.push(Task::perform(
+                        Tab::apply_filter(tab.clone(), app.filters.clone()),
+                        Message::FilterUpdate,
+                    ));
+                }
+
+                return tab_reload_tasks
+                    .into_iter()
+                    .reduce(|acc, task| acc.chain(task))
+                    .unwrap_or(Task::none());
+            }
+            Message::FilterUpdate(maybe_update) => {
+                let Some(tab_update) = maybe_update else {
+                    return Task::none();
+                };
+
+                for tab in &mut app.tabs {
+                    if tab.file == tab_update.file {
+                        *tab = tab_update;
+                        if let Some(last_session) = tab.sessions.last_mut() {
+                            log::info!("Reloaded tab {:?}", tab.file);
+                            if app.tail_enabled {
+                                last_session.scroll_pos = SCROLL_END;
+                            } else {
+                                last_session.scroll_pos = last_session.rows.len() as f32;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            Message::SearchChanged(search) => {
+                app.search = search.split(',').map(|str| str.to_owned()).collect()
+            }
+            Message::FileOpen => {
+                app.loading_in_progress = true;
+                return Task::perform(LogoscopeApp::open_file(), Message::FileOpened);
+            }
+            Message::FileOpened(file_load_result) => {
+                app.loading_in_progress = false;
+                let Ok(loaded_files) = file_load_result else {
+                    log::error!("File open error: [{:?}]", file_load_result);
+                    return Task::none();
+                };
+                log::info!(
+                    "Files opened {:?}",
+                    loaded_files
+                        .iter()
+                        .map(|file| { &file.file_path })
+                        .collect::<Vec<_>>()
+                );
+
+                let mut tab_reload_tasks = Vec::new();
+                for loaded_file in loaded_files {
+                    app.tabs.push(Tab {
+                        table: loaded_file.table,
+                        file: loaded_file.file_path,
+                        ..Tab::default()
+                    });
+                    app.current_tab = app.tabs.len().saturating_sub(1);
+                    for tab in &mut app.tabs {
+                        tab_reload_tasks.push(Task::perform(
+                            Tab::apply_filter(tab.clone(), app.filters.clone()),
+                            Message::FilterUpdate,
+                        ));
+                        tab.current_session = tab.sessions.len().saturating_sub(1);
+                        if let Some(last_session) = tab.sessions.last_mut() {
+                            last_session.scroll_pos = last_session.rows.len() as f32;
+                        }
+                    }
+                }
+                return tab_reload_tasks
+                    .into_iter()
+                    .reduce(|acc, task| acc.chain(task))
+                    .unwrap_or(Task::none());
+            }
+            Message::Scrolled(pos) => {
+                let Some(current_session) = app.get_current_session_mut() else {
+                    return Task::none();
+                };
+                current_session.scroll_pos = pos;
+            }
+            Message::RowClicked(row_num) => {
+                let multiselect_enabled = app.multiselect_enabled;
+                let Some(current_tab) = app.get_current_tab_mut() else {
+                    return Task::none();
+                };
+                if current_tab.selected_rows.contains(&row_num) {
+                    current_tab.selected_rows.remove(&row_num);
+                    return Task::none();
+                }
+
+                if !multiselect_enabled {
+                    current_tab.selected_rows.clear();
+                }
+                current_tab.selected_rows.insert(row_num);
+            }
+            Message::TabChanged(i) => {
+                app.current_tab = i;
+            }
+            Message::TabClosed(i) => app.close_tab(i),
+            Message::Event(event) => {
+                // Known keys pressed
+                if let Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(identifier),
+                    modifiers,
+                    ..
+                }) = event
+                {
+                    if modifiers.control() {
+                        match identifier {
+                            key::Named::Tab => {
+                                if modifiers.shift() {
+                                    app.prev_tab();
+                                    return Task::none();
+                                }
+                                app.next_tab();
+                            }
+                            key::Named::PageDown => {
+                                app.next_tab();
+                            }
+                            key::Named::PageUp => {
+                                app.prev_tab();
+                            }
+                            _ => {}
+                        }
+                        return Task::none();
+                    }
+
+                    match identifier {
+                        key::Named::ArrowDown => {
+                            app.move_cursor(1);
+                        }
+                        key::Named::ArrowUp => {
+                            app.move_cursor(-1);
+                        }
+                        key::Named::ArrowLeft => {
+                            let Some(current_tab) = app.get_current_tab_mut() else {
+                                return Task::none();
+                            };
+                            current_tab.current_session =
+                                current_tab.current_session.saturating_sub(1);
+                        }
+                        key::Named::ArrowRight => {
+                            let Some(current_tab) = app.get_current_tab_mut() else {
+                                return Task::none();
+                            };
+                            let last_session = current_tab.sessions.len().saturating_sub(1);
+                            current_tab.current_session = current_tab
+                                .current_session
+                                .saturating_add(1)
+                                .clamp(0, last_session);
+                        }
+                        key::Named::PageDown => {
+                            app.scroll(-1.);
+                        }
+                        key::Named::PageUp => {
+                            app.scroll(1.);
+                        }
+                        key::Named::Home => {
+                            let Some(current_session) = app.get_current_session_mut() else {
+                                return Task::none();
+                            };
+                            current_session.scroll_pos = current_session.rows.len() as f32;
+                        }
+                        key::Named::End => {
+                            let Some(current_session) = app.get_current_session_mut() else {
+                                return Task::none();
+                            };
+                            current_session.scroll_pos = SCROLL_END;
+                        }
+                        _ => {}
+                    }
+                }
+                // character keys
+                else if let Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Character(key_char),
+                    modifiers,
+                    ..
+                }) = event
+                {
+                    if key_char.to_lowercase() == "o" {
+                        let _ = iced::Task::perform(LogoscopeApp::open_file(), Message::FileOpened);
+                    } else if modifiers.control() {
+                        if key_char.to_lowercase() == "w" {
+                            if app.tabs.is_empty() {
+                                return Task::none();
+                            }
+                            app.close_tab(app.current_tab);
+                        } else if key_char.to_lowercase() == "c" {
+                            // TODO
+                            let Ok(mut clipboard_ctx) = ClipboardContext::new() else {
+                                return Task::none();
+                            };
+                            let Some(current_tab) = app.get_current_tab() else {
+                                return Task::none();
+                            };
+                            let Some(current_session) = app.get_current_session() else {
+                                return Task::none();
+                            };
+
+                            let mut selected_text = String::new();
+                            for row_index in &current_tab.selected_rows {
+                                let Some(row) = current_session.rows.get(*row_index) else {
+                                    continue;
+                                };
+                                let Some(text) = row
+                                    .clone()
+                                    .into_iter()
+                                    .reduce(|acc, col| acc.to_owned() + " " + &col)
+                                else {
+                                    continue;
+                                };
+                                selected_text += &(text + "\n");
+                            }
+                            let Ok(_) = clipboard_ctx.set_contents(selected_text.clone()) else {
+                                log::error!("Failed to copy to clipboard: [{}]", selected_text);
+                                return Task::none();
+                            };
+                        } else if key_char.to_lowercase() == "=" {
+                            app.increase_text_size();
+                        } else if key_char.to_lowercase() == "-" {
+                            app.decrease_text_size();
+                        }
+                    }
+                } else if let Event::Mouse(mouse::Event::WheelScrolled {
+                    delta: mouse::ScrollDelta::Lines { y, .. },
+                }) = event
+                {
+                    app.scroll(y);
+                }
+            }
+            Message::TextSizeIncrease => {
+                app.increase_text_size();
+            }
+            Message::TextSizeDecrease => {
+                app.decrease_text_size();
+            }
+            Message::None => {}
+        }
+
+        Task::none()
+    }
+}

@@ -1,0 +1,20 @@
+[package]
+name = "logoscope"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+async-std = "1.13.1"
+copypasta = "0.10.2"
+env_logger = "0.11.8"
+iced = { version = "0.13.1", features = ["tokio"] }
+lazy_static = "1.5.0"
+log = "0.4.27"
+regex = "1.11.1"
+rfd = "0.15.3"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winres = "0.1.12"
