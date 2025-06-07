@@ -244,12 +244,12 @@ impl LogoscopeApp {
     }
 
     pub fn increase_text_size(&mut self) {
-        self.text_size = self.text_size + 1.;
+        self.text_size += 1.;
         self.text_size = self.text_size.clamp(1., f32::INFINITY);
     }
 
     pub fn decrease_text_size(&mut self) {
-        self.text_size = self.text_size - 1.;
+        self.text_size -= 1.;
         self.text_size = self.text_size.clamp(1., f32::INFINITY);
     }
 }
