@@ -1,5 +1,7 @@
 Features:
 - Transfer new instances to preloaded session
+- Open tab entry in new window
+- JSON & XML formatting in preview
 - Searching
 - Verbosity filter
 - Combined view
@@ -7,7 +9,6 @@ Features:
     - Keyboard shortcuts
     - Textboxes
 - Multiple column select with preview
-- JSON & XML formatting in preview
 - Automatic updates
 - Basic syntax highlighting
 - Multiple profiles

@@ -2,7 +2,9 @@ use crate::parser::{LogEntryIndices, parse_log_by_path_async};
 use crate::theme::AppTheme;
 use crate::utils::get_config_dir_path;
 use serde::{Deserialize, Serialize};
+use std::env::args;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 pub const ROW_BUFFER_SIZE: usize = 50;
 pub const SCROLL_MULTIPLIER: f32 = 4.;
@@ -34,6 +36,7 @@ pub struct LogoscopeApp {
     pub tail_enabled: bool,
     pub theme: AppTheme,
     pub loading_in_progress: bool,
+    pub tcp_port: Option<u64>,
     pub text_size: f32,
 }
 
@@ -42,11 +45,19 @@ impl LogoscopeApp {
         let mut all_tasks = Vec::new();
         let mut tail_tasks = Vec::new();
         let mut loaded_config = None;
+        let tabs_to_add = args().skip(1).collect::<Vec<_>>();
         if let Ok(file_contents) = std::fs::read(get_config_dir_path().join(CONFIGS_FILE_NAME)) {
             if let Ok(mut logoscope_app) =
                 serde_json::from_str::<LogoscopeApp>(&String::from_utf8(file_contents).unwrap())
             {
+                for file_path in &tabs_to_add {
+                    logoscope_app.tabs.push(Tab {
+                        file: std::path::PathBuf::from_str(file_path).unwrap(),
+                        ..Tab::default()
+                    });
+                }
                 log::info!("Loaded config: [{:?}", logoscope_app);
+
                 let files_to_open: Vec<_> = logoscope_app
                     .tabs
                     .iter()
@@ -92,12 +103,19 @@ impl LogoscopeApp {
             Self {
                 filters: Vec::new(),
                 search: Vec::new(),
-                tabs: Vec::<Tab>::new(),
+                tabs: tabs_to_add
+                    .into_iter()
+                    .map(|file_path| Tab {
+                        file: std::path::PathBuf::from_str(&file_path).unwrap(),
+                        ..Tab::default()
+                    })
+                    .collect(),
                 current_tab: 0,
                 multiselect_enabled: false,
                 tail_enabled: false,
                 theme: AppTheme::TokyoNightStorm,
                 loading_in_progress: false,
+                tcp_port: None,
                 text_size: 14.,
             },
             tasks,
