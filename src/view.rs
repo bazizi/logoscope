@@ -130,58 +130,62 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
 
         Some((
             i,
-            button({
-                row![
-                    text(format!("{:<30}", &row[LogEntryIndices::Date as usize]).to_owned())
-                        .size(app.text_size),
-                    text(format!("{:<10}", &row[LogEntryIndices::Level as usize]).to_owned())
-                        .size(app.text_size)
-                        .width(Length::Fixed(100.)),
-                    text(&row[LogEntryIndices::Log as usize]).size(app.text_size)
-                ]
-            })
-            .width(Length::Fill)
-            .on_press(Message::RowClicked(i))
-            .style(move |theme: &iced::Theme, status| {
-                if selected_rows.contains(&i) {
-                    return button::primary(theme, status);
-                }
-
-                if row[LogEntryIndices::Level as usize]
-                    .to_lowercase()
-                    .contains("warn")
-                {
-                    button::Style {
-                        background: Some(Background::Color(iced::Color {
-                            r: 255.,
-                            g: 117.,
-                            b: 24.,
-                            a: 255.,
-                        })),
-                        ..button::Style::default()
+            row![
+                button("    ").style(move |theme: &iced::Theme, status| {
+                    if row[LogEntryIndices::Level as usize]
+                        .to_lowercase()
+                        .contains("warn")
+                    {
+                        button::Style {
+                            background: Some(Background::Color(iced::Color {
+                                r: 255.,
+                                g: 117.,
+                                b: 24.,
+                                a: 255.,
+                            })),
+                            ..button::Style::default()
+                        }
+                    } else if row[LogEntryIndices::Level as usize]
+                        .to_lowercase()
+                        .contains("err")
+                    {
+                        button::danger(theme, status)
+                    } else if row[LogEntryIndices::Level as usize]
+                        .to_lowercase()
+                        .contains("deb")
+                    {
+                        button::Style {
+                            background: Some(Background::Color(iced::Color {
+                                r: 255.,
+                                g: 255.,
+                                a: 255.,
+                                ..iced::Color::default()
+                            })),
+                            ..button::Style::default()
+                        }
+                    } else {
+                        button::secondary(theme, status)
                     }
-                } else if row[LogEntryIndices::Level as usize]
-                    .to_lowercase()
-                    .contains("err")
-                {
-                    button::danger(theme, status)
-                } else if row[LogEntryIndices::Level as usize]
-                    .to_lowercase()
-                    .contains("deb")
-                {
-                    button::Style {
-                        background: Some(Background::Color(iced::Color {
-                            r: 255.,
-                            g: 255.,
-                            a: 255.,
-                            ..iced::Color::default()
-                        })),
-                        ..button::Style::default()
+                }),
+                button({
+                    row![
+                        text(format!("{:<30}", &row[LogEntryIndices::Date as usize]).to_owned())
+                            .size(app.text_size),
+                        text(format!("{:<10}", &row[LogEntryIndices::Level as usize]).to_owned())
+                            .size(app.text_size)
+                            .width(Length::Fixed(100.)),
+                        text(&row[LogEntryIndices::Log as usize]).size(app.text_size)
+                    ]
+                })
+                .style(move |theme: &iced::Theme, status| {
+                    if selected_rows.contains(&i) {
+                        return button::primary(theme, status);
                     }
-                } else {
                     button::secondary(theme, status)
-                }
-            })
+                })
+                .width(Length::Fill)
+                .on_press(Message::RowClicked(i))
+            ]
             .into(),
         ))
     }))
