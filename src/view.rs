@@ -170,11 +170,15 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
                 button({
                     row![
                         text(format!("{:<30}", &row[LogEntryIndices::Date as usize]).to_owned())
+                            .wrapping(text::Wrapping::None)
                             .size(app.text_size),
                         text(format!("{:<10}", &row[LogEntryIndices::Level as usize]).to_owned())
+                            .wrapping(text::Wrapping::None)
                             .size(app.text_size)
                             .width(Length::Fixed(100.)),
-                        text(&row[LogEntryIndices::Log as usize]).size(app.text_size)
+                        text(&row[LogEntryIndices::Log as usize])
+                            .size(app.text_size)
+                            .wrapping(text::Wrapping::None)
                     ]
                 })
                 .style(move |theme: &iced::Theme, status| {

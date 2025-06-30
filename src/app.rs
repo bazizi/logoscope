@@ -1,21 +1,25 @@
 use crate::parser::{LogEntryIndices, parse_log_by_path_async};
 use crate::theme::AppTheme;
 use crate::utils::get_config_dir_path;
+use async_std::task::Task;
 use serde::{Deserialize, Serialize};
 use std::env::args;
+use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 
 pub const ROW_BUFFER_SIZE: usize = 50;
 pub const SCROLL_MULTIPLIER: f32 = 4.;
 pub const SCROLL_END: f32 = (ROW_BUFFER_SIZE / 4) as f32;
 pub const CONFIGS_FILE_NAME: &str = "config.json";
+const LOCALHOST_IPV4: &str = "127.0.0.1";
 
 use crate::messages::Message;
 use crate::tab::Tab;
 use crate::table::Table;
 
-use iced::{Element, Subscription, Task, event};
+use iced::{Element, Subscription, event};
 
 #[derive(Debug, Clone)]
 pub struct LogLoadError {}
@@ -38,18 +42,33 @@ pub struct LogoscopeApp {
     pub loading_in_progress: bool,
     pub tcp_port: Option<u64>,
     pub text_size: f32,
+    #[serde(skip_serializing, skip_deserializing)]
+    threads_running: Arc<Mutex<bool>>,
 }
 
 impl LogoscopeApp {
+    pub fn init_net(&mut self) {
+        if let Some(port_num) = self.tcp_port {
+            log::info!("Attempting connection to port {}", port_num);
+            if let Ok(mut conn) =
+                std::net::TcpStream::connect(format!("{}:{}", LOCALHOST_IPV4, port_num))
+            {
+                log::info!("Successfully connected to port {}", port_num);
+                conn.write_all(args().next().unwrap().as_bytes()).unwrap();
+                log::info!("Redirected to running instance");
+                std::process::exit(0);
+            }
+            *self.threads_running.lock().unwrap() = true;
+            let handler = std::thread::spawn(move || loop {});
+        }
+    }
     pub fn new() -> (Self, iced::Task<Message>) {
-        let mut all_tasks = Vec::new();
-        let mut tail_tasks = Vec::new();
-        let mut loaded_config = None;
         let tabs_to_add = args().skip(1).collect::<Vec<_>>();
         if let Ok(file_contents) = std::fs::read(get_config_dir_path().join(CONFIGS_FILE_NAME)) {
             if let Ok(mut logoscope_app) =
                 serde_json::from_str::<LogoscopeApp>(&String::from_utf8(file_contents).unwrap())
             {
+                logoscope_app.init_net();
                 for file_path in &tabs_to_add {
                     logoscope_app.tabs.push(Tab {
                         file: std::path::PathBuf::from_str(file_path).unwrap(),
@@ -64,40 +83,21 @@ impl LogoscopeApp {
                     .map(|tab| tab.file.clone())
                     .collect();
                 log::info!("Loading files from last session: [{:?}]", files_to_open);
-                logoscope_app.loading_in_progress = !files_to_open.is_empty();
-                all_tasks.push(iced::Task::perform(
-                    LogoscopeApp::open_files(files_to_open),
-                    Message::FileOpened,
-                ));
-
-                for tab in &logoscope_app.tabs {
-                    tail_tasks.push(Task::perform(
-                        Tab::tail(tab.clone(), logoscope_app.filters.clone()),
-                        Message::TailUpdate,
-                    ));
-                }
+                // Clear tabs as they'll be reopened fresh
                 logoscope_app.tabs.clear();
-                loaded_config = Some(logoscope_app);
+                logoscope_app.loading_in_progress = !files_to_open.is_empty();
+
+                return (
+                    logoscope_app,
+                    iced::Task::perform(
+                        LogoscopeApp::open_files(files_to_open),
+                        Message::FileOpened,
+                    ),
+                );
             }
         }
 
         log::info!("Loading app");
-        let mut tasks = all_tasks
-            .into_iter()
-            .reduce(|acc, task| acc.chain(task))
-            .unwrap_or(Task::none());
-        if !tail_tasks.is_empty() {
-            tasks = tasks.chain(
-                tail_tasks
-                    .into_iter()
-                    .reduce(|acc, task| acc.chain(task))
-                    .unwrap_or(Task::none()),
-            );
-        }
-
-        if let Some(config) = loaded_config {
-            return (config, tasks);
-        }
 
         (
             Self {
@@ -117,8 +117,9 @@ impl LogoscopeApp {
                 loading_in_progress: false,
                 tcp_port: None,
                 text_size: 14.,
+                threads_running: Arc::new(Mutex::new(true)),
             },
-            tasks,
+            iced::Task::none(),
         )
     }
     pub fn title(&self) -> String {
@@ -249,7 +250,7 @@ impl LogoscopeApp {
         self.current_tab = self.current_tab.clamp(0, self.tabs.len().saturating_sub(1));
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message) -> iced::Task<Message> {
         message.handle(self)
     }
 

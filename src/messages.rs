@@ -188,6 +188,16 @@ impl Message {
                         }
                     }
                 }
+
+                if app.tail_enabled {
+                    for tab in &app.tabs {
+                        tab_reload_tasks.push(Task::perform(
+                            Tab::tail(tab.clone(), app.filters.clone()),
+                            Message::TailUpdate,
+                        ));
+                    }
+                }
+
                 return tab_reload_tasks
                     .into_iter()
                     .reduce(|acc, task| acc.chain(task))
