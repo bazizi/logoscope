@@ -85,12 +85,13 @@ impl Tab {
                     .contains(&session_identifier.to_lowercase())
                 {
                     session.scroll_pos = session.rows.len() as f32;
-                    session.identifier = session
-                        .rows
-                        .first()
-                        .unwrap_or(&["".to_owned()].into_iter().collect::<Vec<_>>())
-                        [LogEntryIndices::Date as usize]
-                        .clone();
+                    session.identifier =
+                        session
+                            .rows
+                            .first()
+                            .unwrap_or(&vec!["".to_owned(); LogEntryIndices::Date as usize + 1])
+                            [LogEntryIndices::Date as usize]
+                            .clone();
                     tab.sessions.push(session);
                     session = Table::default();
                     break;

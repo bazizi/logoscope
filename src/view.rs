@@ -71,9 +71,12 @@ fn view_top_navbar(app: &LogoscopeApp) -> Element<Message> {
         horizontal_space().width(Length::FillPortion(5)),
         // Search
         text("Search: "),
+        button(text("<")).on_press(Message::PrevSearch),
         text_input("Comma-separated keywords...", &app.search.join(","))
             .width(Length::FillPortion(20))
-            .on_input(Message::SearchChanged),
+            .on_input(Message::SearchChanged)
+            .on_submit(Message::NextSearch),
+        button(text(">")).on_press(Message::NextSearch),
         horizontal_space().width(Length::FillPortion(5)),
         // Text size
         button("-").on_press(Message::TextSizeDecrease),
@@ -116,7 +119,7 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
         return horizontal_space().into();
     };
 
-    // Have to invert the scoll position to reverse the slider rendering
+    // Have to invert the scroll position to reverse the slider rendering
     let scroll_pos = current_session
         .rows
         .len()

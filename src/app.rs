@@ -1,7 +1,6 @@
 use crate::parser::{LogEntryIndices, parse_log_by_path_async};
 use crate::theme::AppTheme;
 use crate::utils::get_config_dir_path;
-use async_std::task::Task;
 use serde::{Deserialize, Serialize};
 use std::env::args;
 use std::io::Write;
@@ -59,7 +58,9 @@ impl LogoscopeApp {
                 std::process::exit(0);
             }
             *self.threads_running.lock().unwrap() = true;
-            let handler = std::thread::spawn(move || loop {});
+            let _handler = std::thread::spawn(move || {
+                // TODO
+            });
         }
     }
     pub fn new() -> (Self, iced::Task<Message>) {

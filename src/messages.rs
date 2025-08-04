@@ -1,6 +1,7 @@
 use core::f32;
 
 use crate::app::{LogLoadError, LogLoadSuccess, LogoscopeApp, SCROLL_END};
+use crate::parser::LogEntryIndices;
 use crate::tab::Tab;
 use crate::theme::AppTheme;
 use copypasta::{ClipboardContext, ClipboardProvider};
@@ -17,7 +18,9 @@ pub enum Message {
     TailUpdate(Tab),
     FilterChanged(String),
     FilterUpdate(Option<Tab>),
+    PrevSearch,
     SearchChanged(String),
+    NextSearch,
     FileOpen,
     FileOpened(Result<Vec<LogLoadSuccess>, LogLoadError>),
     Scrolled(f32),
@@ -33,6 +36,47 @@ pub enum Message {
     NextSession,
     TextSizeIncrease,
     TextSizeDecrease,
+}
+
+fn do_search(range: Vec<usize>, app: &mut LogoscopeApp) -> Task<Message> {
+    let mut search_kws = app.search.clone();
+    let Some(current_session) = app.get_current_session_mut() else {
+        return Task::none();
+    };
+
+    for i in range {
+        let Some(row) = current_session.rows.get(i) else {
+            continue;
+        };
+        for search_kw in &mut search_kws {
+            let mut row_column = LogEntryIndices::Log as usize;
+            let sanitized_kw = if search_kw.to_lowercase().starts_with("s:") {
+                row_column = LogEntryIndices::Level as usize;
+                search_kw[2..].to_owned()
+            } else if search_kw.to_lowercase().starts_with("d:") {
+                row_column = LogEntryIndices::Date as usize;
+                search_kw[2..].to_owned()
+            } else {
+                search_kw.clone()
+            };
+            if row[row_column]
+                .to_lowercase()
+                .contains(&sanitized_kw.to_lowercase())
+            {
+                current_session.scroll_pos = current_session
+                    .rows
+                    .len()
+                    .saturating_sub(i)
+                    .clamp(0, current_session.rows.len())
+                    as f32;
+                log::debug!("Searching: Index {} matched!", i);
+                return Task::none();
+            } else {
+                log::debug!("Searching: Index {} did not match", i);
+            }
+        }
+    }
+    Task::none()
 }
 
 impl Message {
@@ -141,15 +185,46 @@ impl Message {
                             if app.tail_enabled {
                                 last_session.scroll_pos = SCROLL_END;
                             } else {
-                                last_session.scroll_pos = last_session.rows.len() as f32;
+                                last_session.scroll_pos =
+                                    last_session.rows.len().saturating_sub(SCROLL_END as usize)
+                                        as f32;
                             }
                         }
                         break;
                     }
                 }
             }
+            Message::PrevSearch => {
+                let Some(current_session) = app.get_current_session_mut() else {
+                    return Task::none();
+                };
+
+                // Have to invert the scroll position to reverse the slider rendering
+                let scroll_pos = current_session
+                    .rows
+                    .len()
+                    .saturating_sub(current_session.scroll_pos as usize)
+                    .clamp(0, current_session.rows.len().saturating_sub(1));
+                return do_search((0..scroll_pos).rev().collect(), app);
+            }
             Message::SearchChanged(search) => {
                 app.search = search.split(',').map(|str| str.to_owned()).collect()
+            }
+            Message::NextSearch => {
+                let Some(current_session) = app.get_current_session_mut() else {
+                    return Task::none();
+                };
+
+                // Have to invert the scroll position to reverse the slider rendering
+                let scroll_pos = current_session
+                    .rows
+                    .len()
+                    .saturating_sub(current_session.scroll_pos as usize)
+                    .clamp(0, current_session.rows.len().saturating_sub(1));
+                return do_search(
+                    (scroll_pos.saturating_add(1)..current_session.rows.len()).collect(),
+                    app,
+                );
             }
             Message::FileOpen => {
                 app.loading_in_progress = true;
@@ -204,12 +279,14 @@ impl Message {
                     .unwrap_or(Task::none());
             }
             Message::Scrolled(pos) => {
+                log::info!("Scrolled to {}", pos);
                 let Some(current_session) = app.get_current_session_mut() else {
                     return Task::none();
                 };
                 current_session.scroll_pos = pos;
             }
             Message::RowClicked(row_num) => {
+                log::info!("Row clicked {}", row_num);
                 let multiselect_enabled = app.multiselect_enabled;
                 let Some(current_tab) = app.get_current_tab_mut() else {
                     return Task::none();
