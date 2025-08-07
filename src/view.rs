@@ -3,14 +3,14 @@ use crate::messages::Message;
 use crate::parser::LogEntryIndices;
 use crate::theme::AppTheme;
 
-use iced::widget::pick_list;
 use iced::widget::toggler;
 use iced::widget::vertical_slider;
+use iced::widget::{pick_list, rich_text};
 use iced::{Background, alignment};
 use iced::{
-    Element, Length,
+    Element, Font, Length,
     widget::{
-        button, column, horizontal_space, keyed_column, row, text, text_input, vertical_space,
+        button, column, horizontal_space, keyed_column, row, span, text, text_input, vertical_space,
     },
 };
 
@@ -114,6 +114,43 @@ fn view_tabs(app: &LogoscopeApp) -> Element<Message> {
     .into()
 }
 
+fn highlight_search_matches<'a>(text: &'a str, keywords: &Vec<String>) -> Element<'a, Message> {
+    let mut keyword_positions_in_text = vec![];
+
+    {
+        let mut last_keyword_end_absolute = 0;
+        for keyword in keywords {
+            if keyword.is_empty() {
+                continue;
+            }
+
+            if let Some(keyword_begin_relative) = text[last_keyword_end_absolute..]
+                .to_lowercase()
+                .find(&keyword.to_lowercase())
+            {
+                let keyword_begin_absolute = last_keyword_end_absolute + keyword_begin_relative;
+                last_keyword_end_absolute = keyword_begin_absolute + keyword.len();
+                keyword_positions_in_text.push((keyword_begin_absolute, last_keyword_end_absolute));
+            }
+        }
+    }
+    let mut text_spans = vec![];
+    let mut prev_span_end = 0;
+
+    for (keyword_start, keyword_end) in keyword_positions_in_text {
+        text_spans.push(span(&text[prev_span_end..keyword_start]));
+        text_spans.push(span(&text[keyword_start..keyword_end]).font(Font {
+            weight: iced::font::Weight::Bold,
+            ..Font::default()
+        }));
+        prev_span_end = keyword_end;
+    }
+
+    text_spans.push(span(&text[prev_span_end..]));
+
+    rich_text(text_spans).into()
+}
+
 fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
     let Some(current_session) = app.get_current_session() else {
         return horizontal_space().into();
@@ -179,9 +216,7 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
                             .wrapping(text::Wrapping::None)
                             .size(app.text_size)
                             .width(Length::Fixed(100.)),
-                        text(&row[LogEntryIndices::Log as usize])
-                            .size(app.text_size)
-                            .wrapping(text::Wrapping::None)
+                        highlight_search_matches(&row[LogEntryIndices::Log as usize], &app.search)
                     ]
                 })
                 .style(move |theme: &iced::Theme, status| {
