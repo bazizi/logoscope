@@ -1,7 +1,7 @@
 use crate::app::SCROLL_END;
 use crate::parser::LogEntryIndices;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 pub const SESSION_IDENTIFIERS: [&str; 3] = [
     "client version:",         // Steam - client version:
@@ -34,6 +34,7 @@ impl Tab {
     }
 
     pub async fn tail(mut tab: Tab, filters: Vec<String>) -> Tab {
+        async_std::task::sleep(Duration::from_secs(1)).await;
         let Ok(metadata) = std::fs::metadata(&tab.file) else {
             return tab;
         };
