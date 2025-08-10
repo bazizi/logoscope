@@ -74,8 +74,7 @@ fn view_top_navbar(app: &LogoscopeApp) -> Element<Message> {
         button(text("<")).on_press(Message::PrevSearch),
         text_input("Comma-separated keywords...", &app.search.join(","))
             .width(Length::FillPortion(20))
-            .on_input(Message::SearchChanged)
-            .on_submit(Message::NextSearch),
+            .on_input(Message::SearchChanged),
         button(text(">")).on_press(Message::NextSearch),
         horizontal_space().width(Length::FillPortion(5)),
         // Text size
@@ -114,41 +113,85 @@ fn view_tabs(app: &LogoscopeApp) -> Element<Message> {
     .into()
 }
 
-fn highlight_search_matches<'a>(text: &'a str, keywords: &Vec<String>) -> Element<'a, Message> {
+fn highlight_search_matches<'a>(
+    text: &'a str,
+    keywords: &Vec<String>,
+    text_size: f32,
+) -> Element<'a, Message> {
+    // A mutable vector to hold all start and end positions of found keywords.
     let mut keyword_positions_in_text = vec![];
 
-    {
-        let mut last_keyword_end_absolute = 0;
-        for keyword in keywords {
-            if keyword.is_empty() {
-                continue;
-            }
+    // Search for all occurrences of each keyword, not just the first.
+    // The search logic is now inside a loop that iterates for each keyword.
+    for keyword in keywords {
+        if keyword.is_empty() {
+            continue;
+        }
 
-            if let Some(keyword_begin_relative) = text[last_keyword_end_absolute..]
-                .to_lowercase()
-                .find(&keyword.to_lowercase())
-            {
-                let keyword_begin_absolute = last_keyword_end_absolute + keyword_begin_relative;
-                last_keyword_end_absolute = keyword_begin_absolute + keyword.len();
-                keyword_positions_in_text.push((keyword_begin_absolute, last_keyword_end_absolute));
-            }
+        let mut last_keyword_end_absolute = 0;
+        let keyword_lowercase = keyword.to_lowercase();
+        let text_lowercase = text.to_lowercase();
+
+        // Use a while loop to find all instances of the current keyword.
+        // The search starts from the last found position to avoid infinite loops and find all matches.
+        while let Some(keyword_begin_relative) =
+            text_lowercase[last_keyword_end_absolute..].find(&keyword_lowercase)
+        {
+            let keyword_begin_absolute = last_keyword_end_absolute + keyword_begin_relative;
+            let keyword_end_absolute = keyword_begin_absolute + keyword.len();
+            keyword_positions_in_text.push((keyword_begin_absolute, keyword_end_absolute));
+            last_keyword_end_absolute = keyword_end_absolute;
         }
     }
+
+    // Sort the matches by their starting position to ensure correct processing.
+    keyword_positions_in_text.sort_by_key(|(start, _)| *start);
+
+    // Merge overlapping or adjacent matches to create clean highlighted spans.
+    let mut merged_positions = vec![];
+    if let Some(&(mut current_start, mut current_end)) = keyword_positions_in_text.first() {
+        for &(next_start, next_end) in keyword_positions_in_text.iter().skip(1) {
+            if next_start <= current_end {
+                // If the next match starts before or at the end of the current one, merge them.
+                current_end = current_end.max(next_end);
+            } else {
+                // Otherwise, push the current merged span and start a new one.
+                merged_positions.push((current_start, current_end));
+                current_start = next_start;
+                current_end = next_end;
+            }
+        }
+        // Don't forget to push the last merged span.
+        merged_positions.push((current_start, current_end));
+    }
+
     let mut text_spans = vec![];
     let mut prev_span_end = 0;
 
-    for (keyword_start, keyword_end) in keyword_positions_in_text {
-        text_spans.push(span(&text[prev_span_end..keyword_start]));
+    // Create the spans for the rich text element based on the merged positions.
+    for (keyword_start, keyword_end) in merged_positions {
+        // Add the plain text before the highlighted match.
+        if prev_span_end < keyword_start {
+            text_spans.push(span(&text[prev_span_end..keyword_start]));
+        }
+        // Add the highlighted text.
         text_spans.push(span(&text[keyword_start..keyword_end]).font(Font {
             weight: iced::font::Weight::Bold,
             ..Font::default()
         }));
+        // Update the end of the last processed span.
         prev_span_end = keyword_end;
     }
 
-    text_spans.push(span(&text[prev_span_end..]));
+    // Add any remaining text after the last highlighted match.
+    if prev_span_end < text.len() {
+        text_spans.push(span(&text[prev_span_end..]));
+    }
 
-    rich_text(text_spans).into()
+    rich_text(text_spans)
+        .wrapping(text::Wrapping::None)
+        .size(text_size)
+        .into()
 }
 
 fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
@@ -216,7 +259,11 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
                             .wrapping(text::Wrapping::None)
                             .size(app.text_size)
                             .width(Length::Fixed(100.)),
-                        highlight_search_matches(&row[LogEntryIndices::Log as usize], &app.search)
+                        highlight_search_matches(
+                            &row[LogEntryIndices::Log as usize],
+                            &app.search,
+                            app.text_size
+                        )
                     ]
                 })
                 .style(move |theme: &iced::Theme, status| {
