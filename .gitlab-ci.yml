@@ -32,41 +32,41 @@ build-windows:
       - binaries/windows/
     expire_in: 1 hour
 
-# Build for macOS x86_64
-build-macos-x64:
-  stage: build
-  image: rust:latest
-  <<: *cargo_cache
-  before_script:
-    - apt-get update && apt-get install -y clang
-    - rustup target add x86_64-apple-darwin
-  script:
-    - cargo build --release --target x86_64-apple-darwin
-    - mkdir -p binaries/macos-x64
-    - cp target/x86_64-apple-darwin/release/* binaries/macos-x64/ || true
-    - find binaries/macos-x64/ -type f -executable -exec file {} \; | grep -v "text"
-  artifacts:
-    paths:
-      - binaries/macos-x64/
-    expire_in: 1 hour
+# # Build for macOS x86_64
+# build-macos-x64:
+#   stage: build
+#   image: rust:latest
+#   <<: *cargo_cache
+#   before_script:
+#     - apt-get update && apt-get install -y clang
+#     - rustup target add x86_64-apple-darwin
+#   script:
+#     - cargo build --release --target x86_64-apple-darwin
+#     - mkdir -p binaries/macos-x64
+#     - cp target/x86_64-apple-darwin/release/* binaries/macos-x64/ || true
+#     - find binaries/macos-x64/ -type f -executable -exec file {} \; | grep -v "text"
+#   artifacts:
+#     paths:
+#       - binaries/macos-x64/
+#     expire_in: 1 hour
 
-# Build for macOS ARM64 (Apple Silicon)
-build-macos-arm64:
-  stage: build
-  image: rust:latest
-  <<: *cargo_cache
-  before_script:
-    - apt-get update && apt-get install -y clang
-    - rustup target add aarch64-apple-darwin
-  script:
-    - cargo build --release --target aarch64-apple-darwin
-    - mkdir -p binaries/macos-arm64
-    - cp target/aarch64-apple-darwin/release/* binaries/macos-arm64/ || true
-    - find binaries/macos-arm64/ -type f -executable -exec file {} \; | grep -v "text"
-  artifacts:
-    paths:
-      - binaries/macos-arm64/
-    expire_in: 1 hour
+# # Build for macOS ARM64 (Apple Silicon)
+# build-macos-arm64:
+#   stage: build
+#   image: rust:latest
+#   <<: *cargo_cache
+#   before_script:
+#     - apt-get update && apt-get install -y clang
+#     - rustup target add aarch64-apple-darwin
+#   script:
+#     - cargo build --release --target aarch64-apple-darwin
+#     - mkdir -p binaries/macos-arm64
+#     - cp target/aarch64-apple-darwin/release/* binaries/macos-arm64/ || true
+#     - find binaries/macos-arm64/ -type f -executable -exec file {} \; | grep -v "text"
+#   artifacts:
+#     paths:
+#       - binaries/macos-arm64/
+#     expire_in: 1 hour
 
 # Deploy to GitLab Pages
 pages:
@@ -74,8 +74,8 @@ pages:
   image: alpine:latest
   dependencies:
     - build-windows
-    - build-macos-x64
-    - build-macos-arm64
+    # - build-macos-x64
+    # - build-macos-arm64
   before_script:
     - apk add --no-cache tree
   script:
@@ -120,26 +120,26 @@ pages:
           <div class="download-section">
               <h2>macOS (Intel x86_64)</h2>
       EOF
-    - |
-      for file in public/downloads/macos-x64/*; do
-        if [ -f "$file" ]; then
-          filename=$(basename "$file")
-          echo "        <a href=\"downloads/macos-x64/$filename\" class=\"download-link\">$filename</a><br>" >> public/index.html
-        fi
-      done
-    - |
-      cat >> public/index.html << 'EOF'
-          </div>
-          <div class="download-section">
-              <h2>macOS (Apple Silicon ARM64)</h2>
-      EOF
-    - |
-      for file in public/downloads/macos-arm64/*; do
-        if [ -f "$file" ]; then
-          filename=$(basename "$file")
-          echo "        <a href=\"downloads/macos-arm64/$filename\" class=\"download-link\">$filename</a><br>" >> public/index.html
-        fi
-      done
+    # - |
+    #   for file in public/downloads/macos-x64/*; do
+    #     if [ -f "$file" ]; then
+    #       filename=$(basename "$file")
+    #       echo "        <a href=\"downloads/macos-x64/$filename\" class=\"download-link\">$filename</a><br>" >> public/index.html
+    #     fi
+    #   done
+    # - |
+    #   cat >> public/index.html << 'EOF'
+    #       </div>
+    #       <div class="download-section">
+    #           <h2>macOS (Apple Silicon ARM64)</h2>
+    #   EOF
+    # - |
+    #   for file in public/downloads/macos-arm64/*; do
+    #     if [ -f "$file" ]; then
+    #       filename=$(basename "$file")
+    #       echo "        <a href=\"downloads/macos-arm64/$filename\" class=\"download-link\">$filename</a><br>" >> public/index.html
+    #     fi
+    #   done
     - |
       cat >> public/index.html << 'EOF'
           </div>
