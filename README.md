@@ -31,6 +31,8 @@ Log viewer <br/>
 </table>
 </div>
 
+[Download](https://bazizi.github.io/logoscope/)
+
 ## Features
 * Breaking log files into multiple sessions
 * Filtering log entires by multiple comma-separated keywords
