@@ -1,0 +1,101 @@
+name: Rust Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target: [x86_64-pc-windows-msvc]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package artifacts
+        run: |
+          $dir = "release-${{ matrix.target }}"
+          # Create a directory for the release files
+          New-Item -ItemType Directory -Force -Path $dir
+          # Copy the compiled binary into the new directory
+          Copy-Item "target/${{ matrix.target }}/release/your_binary_name.exe" -Destination "$dir/"
+          # Zip the directory
+          Compress-Archive -Path $dir -DestinationPath "${dir}.zip"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ matrix.target }}
+          path: release-${{ matrix.target }}.zip
+          retention-days: 5
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/**/*.zip
+
+  publish_pages:
+    name: Publish download links to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: release
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Get release download URLs
+        id: get_download_urls
+        # This script fetches the download URLs for the release assets.
+        # It's important to replace 'your-username' and 'your-repo-name'
+        # with your actual GitHub username and repository name.
+        run: |
+          DOWNLOAD_URL_64=$(curl -sL \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/your-username/your-repo-name/releases/tags/${{ github.ref_name }}" | \
+            jq -r '.assets[] | select(.name | contains("x86_64")) | .browser_download_url')
+          
+          DOWNLOAD_URL_32=$(curl -sL \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/your-username/your-repo-name/releases/tags/${{ github.ref_name }}" | \
+            jq -r '.assets[] | select(.name | contains("i686")) | .browser_download_url')
+
+          echo "download_url_64=$DOWNLOAD_URL_64" >> $GITHUB_OUTPUT
+          echo "download_url_
