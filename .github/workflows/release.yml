@@ -32,7 +32,7 @@ jobs:
           # Create a directory for the release files
           New-Item -ItemType Directory -Force -Path $dir
           # Copy the compiled binary into the new directory
-          Copy-Item "target/${{ matrix.target }}/release/your_binary_name.exe" -Destination "$dir/"
+          Copy-Item "target/${{ matrix.target }}/release/logoscope.exe" -Destination "$dir/"
           # Zip the directory
           Compress-Archive -Path $dir -DestinationPath "${dir}.zip"
 
@@ -84,17 +84,15 @@ jobs:
       - name: Get release download URLs
         id: get_download_urls
         # This script fetches the download URLs for the release assets.
-        # It's important to replace 'your-username' and 'your-repo-name'
-        # with your actual GitHub username and repository name.
         run: |
           DOWNLOAD_URL_64=$(curl -sL \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/your-username/your-repo-name/releases/tags/${{ github.ref_name }}" | \
+            "https://api.github.com/repos/bazizi/logoscope/releases/tags/${{ github.ref_name }}" | \
             jq -r '.assets[] | select(.name | contains("x86_64")) | .browser_download_url')
           
           DOWNLOAD_URL_32=$(curl -sL \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/your-username/your-repo-name/releases/tags/${{ github.ref_name }}" | \
+            "https://api.github.com/repos/bazizi/logoscope/releases/tags/${{ github.ref_name }}" | \
             jq -r '.assets[] | select(.name | contains("i686")) | .browser_download_url')
 
           echo "download_url_64=$DOWNLOAD_URL_64" >> $GITHUB_OUTPUT
