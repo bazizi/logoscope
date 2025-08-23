@@ -259,11 +259,12 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
                             .wrapping(text::Wrapping::None)
                             .size(app.text_size)
                             .width(Length::Fixed(100.)),
-                        highlight_search_matches(
+                        iced::widget::mouse_area(highlight_search_matches(
                             &row[LogEntryIndices::Log as usize],
                             &app.search,
-                            app.text_size
-                        )
+                            app.text_size,
+                        ))
+                        .on_press(Message::RowClicked(i))
                     ]
                 })
                 .style(move |theme: &iced::Theme, status| {

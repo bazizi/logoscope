@@ -1,9 +1,6 @@
 Features:
-- Transfer new instances to preloaded session
 - Open tab entry in new window
 - JSON & XML formatting in preview
-- Searching
-- Verbosity filter
 - Combined view
 - Tooltips for:
     - Keyboard shortcuts
@@ -17,6 +14,9 @@ Bug fixes:
 
 
 Done:
+- Transfer new instances to preloaded session
+- Verbosity filter
+- Searching
 - Loading animation
 - Font resizing
 - Filter and then witch tab not working
