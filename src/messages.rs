@@ -234,8 +234,19 @@ impl Message {
                 app.loading_in_progress = false;
                 let Ok(loaded_files) = file_load_result else {
                     log::error!("File open error: [{:?}]", file_load_result);
-                    return Task::none();
+                    return iced::Task::perform(
+                        LogoscopeApp::handle_incoming_requests(app.tcp_listener.clone().unwrap()),
+                        Message::FileOpened,
+                    );
                 };
+
+                if loaded_files.is_empty() {
+                    return iced::Task::perform(
+                        LogoscopeApp::handle_incoming_requests(app.tcp_listener.clone().unwrap()),
+                        Message::FileOpened,
+                    );
+                }
+
                 log::info!(
                     "Files opened {:?}",
                     loaded_files
@@ -272,6 +283,11 @@ impl Message {
                         ));
                     }
                 }
+
+                tab_reload_tasks.push(iced::Task::perform(
+                    LogoscopeApp::handle_incoming_requests(app.tcp_listener.clone().unwrap()),
+                    Message::FileOpened,
+                ));
 
                 return tab_reload_tasks
                     .into_iter()
