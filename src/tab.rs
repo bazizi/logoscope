@@ -11,6 +11,18 @@ pub const SESSION_IDENTIFIERS: [&str; 3] = [
 
 use crate::table::Table;
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum TabType {
+    Combined, //
+    Normal,
+}
+
+impl Default for TabType {
+    fn default() -> Self {
+        TabType::Normal
+    }
+}
+
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Tab {
     #[serde(skip_serializing, skip_deserializing)]
@@ -18,6 +30,7 @@ pub struct Tab {
 
     #[serde(skip_serializing, skip_deserializing)]
     pub sessions: Vec<Table>, // Copy of All data for this tab broken into multiple sessions
+    pub tab_type: TabType,
     pub file: PathBuf,
     pub file_size: u64,
     pub selected_rows: std::collections::HashSet<usize>,

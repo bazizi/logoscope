@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-type TableRow = Vec<String>;
+pub type TableRow = Vec<String>;
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Table {
