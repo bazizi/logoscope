@@ -175,14 +175,16 @@ impl Message {
                     }
                 }
 
-                return iced::Task::perform(
-                    LogoscopeApp::reload_combined_tab(app.tabs.clone()),
-                    Message::CombinedTabReloaded,
-                )
-                .chain(Task::perform(
-                    Tab::tail(new_tab.clone(), app.filters.clone()),
-                    Message::TailUpdate,
-                ));
+                return iced::Task::batch([
+                    iced::Task::perform(
+                        LogoscopeApp::reload_combined_tab(app.tabs.clone()),
+                        Message::CombinedTabReloaded,
+                    ),
+                    Task::perform(
+                        Tab::tail(new_tab.clone(), app.filters.clone()),
+                        Message::TailUpdate,
+                    ),
+                ]);
             }
             Message::ToggleMultiselect(multiselect_enabled) => {
                 app.multiselect_enabled = multiselect_enabled;
@@ -208,6 +210,10 @@ impl Message {
                 };
 
                 for tab in &mut app.tabs {
+                    if let TabType::Combined = tab.tab_type {
+                        continue;
+                    }
+
                     if tab.file == tab_update.file {
                         *tab = tab_update;
                         if let Some(last_session) = tab.sessions.last_mut() {
@@ -223,6 +229,11 @@ impl Message {
                         break;
                     }
                 }
+
+                return iced::Task::perform(
+                    LogoscopeApp::reload_combined_tab(app.tabs.clone()),
+                    Message::CombinedTabReloaded,
+                );
             }
             Message::PrevSearch => {
                 let Some(current_session) = app.get_current_session_mut() else {
@@ -287,11 +298,6 @@ impl Message {
 
                 let mut tab_reload_tasks = Vec::new();
 
-                tab_reload_tasks.push(iced::Task::perform(
-                    LogoscopeApp::reload_combined_tab(app.tabs.clone()),
-                    Message::CombinedTabReloaded,
-                ));
-
                 for loaded_file in loaded_files {
                     app.tabs.push_back(Tab {
                         table: loaded_file.table,
@@ -325,10 +331,16 @@ impl Message {
                     Message::FileOpened,
                 ));
 
-                return tab_reload_tasks
-                    .into_iter()
-                    .reduce(|acc, task| acc.chain(task))
-                    .unwrap_or(Task::none());
+                return iced::Task::batch([
+                    tab_reload_tasks
+                        .into_iter()
+                        .reduce(|acc, task| acc.chain(task))
+                        .unwrap_or(Task::none()),
+                    iced::Task::perform(
+                        LogoscopeApp::reload_combined_tab(app.tabs.clone()),
+                        Message::CombinedTabReloaded,
+                    ),
+                ]);
             }
             Message::Scrolled(pos) => {
                 log::info!("Scrolled to {}", pos);

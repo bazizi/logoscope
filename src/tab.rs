@@ -47,6 +47,10 @@ impl Tab {
     }
 
     pub async fn tail(mut tab: Tab, filters: Vec<String>) -> Tab {
+        if let TabType::Combined = tab.tab_type {
+            return tab;
+        }
+
         async_std::task::sleep(Duration::from_secs(1)).await;
         let Ok(metadata) = std::fs::metadata(&tab.file) else {
             return tab;
@@ -80,6 +84,10 @@ impl Tab {
     }
 
     pub async fn apply_filter(mut tab: Tab, filters: Vec<String>) -> Option<Tab> {
+        if let TabType::Combined = tab.tab_type {
+            return Some(tab);
+        }
+
         log::info!("applying filters {:?}", filters);
         tab.sessions = [].into();
         let mut session = Table::default();
@@ -119,7 +127,8 @@ impl Tab {
             .rows
             .first()
             .unwrap_or(&["".to_owned()].into_iter().collect::<Vec<_>>())
-            [LogEntryIndices::Date as usize]
+            .get(LogEntryIndices::Date as usize)
+            .unwrap_or(&"".to_owned())
             .clone();
         tab.sessions.push(session);
 
