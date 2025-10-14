@@ -11,6 +11,18 @@ pub const SESSION_IDENTIFIERS: [&str; 3] = [
 
 use crate::table::Table;
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum TabType {
+    Combined, //
+    Normal,
+}
+
+impl Default for TabType {
+    fn default() -> Self {
+        TabType::Normal
+    }
+}
+
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Tab {
     #[serde(skip_serializing, skip_deserializing)]
@@ -18,6 +30,7 @@ pub struct Tab {
 
     #[serde(skip_serializing, skip_deserializing)]
     pub sessions: Vec<Table>, // Copy of All data for this tab broken into multiple sessions
+    pub tab_type: TabType,
     pub file: PathBuf,
     pub file_size: u64,
     pub selected_rows: std::collections::HashSet<usize>,
@@ -34,6 +47,10 @@ impl Tab {
     }
 
     pub async fn tail(mut tab: Tab, filters: Vec<String>) -> Tab {
+        if let TabType::Combined = tab.tab_type {
+            return tab;
+        }
+
         async_std::task::sleep(Duration::from_secs(1)).await;
         let Ok(metadata) = std::fs::metadata(&tab.file) else {
             return tab;
@@ -67,6 +84,10 @@ impl Tab {
     }
 
     pub async fn apply_filter(mut tab: Tab, filters: Vec<String>) -> Option<Tab> {
+        if let TabType::Combined = tab.tab_type {
+            return Some(tab);
+        }
+
         log::info!("applying filters {:?}", filters);
         tab.sessions = [].into();
         let mut session = Table::default();
@@ -106,7 +127,8 @@ impl Tab {
             .rows
             .first()
             .unwrap_or(&["".to_owned()].into_iter().collect::<Vec<_>>())
-            [LogEntryIndices::Date as usize]
+            .get(LogEntryIndices::Date as usize)
+            .unwrap_or(&"".to_owned())
             .clone();
         tab.sessions.push(session);
 
