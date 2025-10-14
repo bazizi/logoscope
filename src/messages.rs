@@ -2,13 +2,14 @@ use core::f32;
 
 use crate::app::{LogLoadError, LogLoadSuccess, LogoscopeApp, SCROLL_END};
 use crate::parser::LogEntryIndices;
-use crate::tab::Tab;
+use crate::tab::{Tab, TabType};
 use crate::theme::AppTheme;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use iced::Task;
 use iced::event::Event;
 use iced::keyboard::key;
 use iced::{keyboard, mouse};
+use log::info;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -36,6 +37,7 @@ pub enum Message {
     NextSession,
     TextSizeIncrease,
     TextSizeDecrease,
+    CombinedTabReloaded(Tab),
 }
 
 fn do_search(range: Vec<usize>, app: &mut LogoscopeApp) -> Task<Message> {
@@ -126,6 +128,10 @@ impl Message {
                 if app.tail_enabled {
                     let mut tail_tasks = Vec::new();
                     for tab in &app.tabs {
+                        if let TabType::Combined = tab.tab_type {
+                            // Skip the combined tab
+                            continue;
+                        }
                         tail_tasks.push(Task::perform(
                             Tab::tail(tab.clone(), app.filters.clone()),
                             Message::TailUpdate,
@@ -138,21 +144,47 @@ impl Message {
                         .unwrap_or(Task::none());
                 }
             }
+            Message::CombinedTabReloaded(tab) => {
+                if app.tabs.is_empty() {
+                    return Task::none();
+                }
+
+                if TabType::Combined != app.tabs.front().unwrap().tab_type {
+                    // The combined tab isn't added yet
+                    let mut combined_tab = Tab::default();
+                    combined_tab.tab_type = TabType::Combined;
+                    app.tabs.push_front(combined_tab);
+                }
+                if let Some(combined_tab) = app.tabs.front_mut() {
+                    combined_tab.sessions = tab.sessions;
+                }
+                return Task::none();
+            }
             Message::TailUpdate(new_tab) => {
                 if !app.tail_enabled {
                     return Task::none();
                 }
 
                 for tab in &mut app.tabs {
+                    if let TabType::Combined = tab.tab_type {
+                        continue;
+                    }
+
                     if tab.file_size != new_tab.file_size && tab.file == new_tab.file {
                         *tab = new_tab.clone();
                     }
                 }
 
-                return Task::perform(
-                    Tab::tail(new_tab.clone(), app.filters.clone()),
-                    Message::TailUpdate,
-                );
+                return iced::Task::batch([
+                    iced::Task::perform(
+                        LogoscopeApp::reload_combined_tab(app.tabs.clone()),
+                        Message::CombinedTabReloaded,
+                    ),
+                    Task::perform(
+                        Tab::tail(new_tab.clone(), app.filters.clone()),
+                        Message::TailUpdate,
+                    ),
+                ]);
             }
             Message::ToggleMultiselect(multiselect_enabled) => {
                 app.multiselect_enabled = multiselect_enabled;
@@ -178,6 +210,10 @@ impl Message {
                 };
 
                 for tab in &mut app.tabs {
+                    if let TabType::Combined = tab.tab_type {
+                        continue;
+                    }
+
                     if tab.file == tab_update.file {
                         *tab = tab_update;
                         if let Some(last_session) = tab.sessions.last_mut() {
@@ -193,6 +229,11 @@ impl Message {
                         break;
                     }
                 }
+
+                return iced::Task::perform(
+                    LogoscopeApp::reload_combined_tab(app.tabs.clone()),
+                    Message::CombinedTabReloaded,
+                );
             }
             Message::PrevSearch => {
                 let Some(current_session) = app.get_current_session_mut() else {
@@ -256,8 +297,9 @@ impl Message {
                 );
 
                 let mut tab_reload_tasks = Vec::new();
+
                 for loaded_file in loaded_files {
-                    app.tabs.push(Tab {
+                    app.tabs.push_back(Tab {
                         table: loaded_file.table,
                         file: loaded_file.file_path,
                         ..Tab::default()
@@ -289,10 +331,16 @@ impl Message {
                     Message::FileOpened,
                 ));
 
-                return tab_reload_tasks
-                    .into_iter()
-                    .reduce(|acc, task| acc.chain(task))
-                    .unwrap_or(Task::none());
+                return iced::Task::batch([
+                    tab_reload_tasks
+                        .into_iter()
+                        .reduce(|acc, task| acc.chain(task))
+                        .unwrap_or(Task::none()),
+                    iced::Task::perform(
+                        LogoscopeApp::reload_combined_tab(app.tabs.clone()),
+                        Message::CombinedTabReloaded,
+                    ),
+                ]);
             }
             Message::Scrolled(pos) => {
                 log::info!("Scrolled to {}", pos);
