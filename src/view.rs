@@ -1,6 +1,7 @@
 use crate::app::{LogoscopeApp, ROW_BUFFER_SIZE, SCROLL_END};
 use crate::messages::Message;
 use crate::parser::LogEntryIndices;
+use crate::tab::{Tab, TabType};
 use crate::theme::AppTheme;
 
 use iced::widget::toggler;
@@ -14,7 +15,7 @@ use iced::{
     },
 };
 
-use crate::table::Table;
+use crate::table::{self, Table};
 
 fn get_session_list(app: &LogoscopeApp) -> Vec<String> {
     let Some(current_tab) = app.get_current_tab() else {
@@ -92,23 +93,42 @@ fn view_top_navbar(app: &LogoscopeApp) -> Element<Message> {
 }
 
 fn view_tabs(app: &LogoscopeApp) -> Element<Message> {
-    row(app.tabs.iter().enumerate().map(|(i, tab)| {
-        row![
-            button(tab.file.file_name().unwrap().to_str().unwrap())
-                .style(move |theme: &iced::Theme, status| {
-                    if app.get_current_tab().is_some() && tab == app.get_current_tab().unwrap() {
-                        button::primary(theme, status)
-                    } else {
-                        button::secondary(theme, status)
-                    }
-                })
-                .on_press(Message::TabChanged(i)),
-            button("X")
-                .on_press(Message::TabClosed(i))
-                .style(button::danger),
-            horizontal_space().width(Length::Fixed(15.)),
-        ]
-        .into()
+    row(app.tabs.iter().enumerate().filter_map(|(i, tab)| {
+        let is_combined_tab = if let TabType::Combined = tab.tab_type {
+            true
+        } else {
+            false
+        };
+
+        let file_name = if is_combined_tab {
+            "Combined"
+        } else {
+            tab.file
+                .file_name()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or_default()
+        };
+
+        Some(
+            row![
+                button(file_name)
+                    .style(move |theme: &iced::Theme, status| {
+                        if app.get_current_tab().is_some() && tab == app.get_current_tab().unwrap()
+                        {
+                            button::primary(theme, status)
+                        } else {
+                            button::secondary(theme, status)
+                        }
+                    })
+                    .on_press(Message::TabChanged(i)),
+                button("X")
+                    .on_press(Message::TabClosed(i))
+                    .style(button::danger),
+                horizontal_space().width(Length::Fixed(15.)),
+            ]
+            .into(),
+        )
     }))
     .into()
 }
@@ -204,6 +224,10 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
         .rows
         .len()
         .saturating_sub(current_session.scroll_pos as usize);
+    let Some(current_tab) = app.get_current_tab() else {
+        return horizontal_space().into();
+    };
+
     let selected_rows = &app.get_current_tab().unwrap().selected_rows;
     let rows = &app.get_current_session().unwrap().rows;
     keyed_column(rows.iter().enumerate().filter_map(|(i, row)| {
@@ -252,6 +276,16 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
                 }),
                 button({
                     row![
+                        text(format!(
+                            "{:<30}",
+                            if let TabType::Combined = current_tab.tab_type {
+                                &row[LogEntryIndices::FileName as usize]
+                            } else {
+                                ""
+                            }
+                        ))
+                        .wrapping(text::Wrapping::None)
+                        .size(app.text_size),
                         text(format!("{:<30}", &row[LogEntryIndices::Date as usize]).to_owned())
                             .wrapping(text::Wrapping::None)
                             .size(app.text_size),

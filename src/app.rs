@@ -3,6 +3,7 @@ use crate::theme::AppTheme;
 use crate::utils::get_config_dir_path;
 use async_std::task::sleep;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::env::args;
 use std::io::{Read, Write};
 use std::net::Shutdown;
@@ -19,8 +20,9 @@ pub const LOCALHOST_IPV4: &str = "127.0.0.1";
 const PORT_FILE: &str = "PORT";
 
 use crate::messages::Message;
-use crate::tab::Tab;
+use crate::tab::{Tab, TabType};
 use crate::table::Table;
+use crate::table::TableRow;
 
 use iced::{Element, Subscription, event};
 
@@ -37,7 +39,7 @@ pub struct LogLoadSuccess {
 pub struct LogoscopeApp {
     pub filters: Vec<String>,
     pub search: Vec<String>,
-    pub tabs: Vec<Tab>,
+    pub tabs: VecDeque<Tab>,
     pub current_tab: usize,
     pub multiselect_enabled: bool,
     pub tail_enabled: bool,
@@ -134,7 +136,7 @@ impl LogoscopeApp {
             {
                 logoscope_app.init_net();
                 for file_path in &tabs_to_add {
-                    logoscope_app.tabs.push(Tab {
+                    logoscope_app.tabs.push_back(Tab {
                         file: std::path::PathBuf::from_str(file_path).unwrap(),
                         ..Tab::default()
                     });
@@ -241,6 +243,34 @@ impl LogoscopeApp {
             });
         }
         Ok(tables)
+    }
+
+    pub async fn reload_combined_tab(tabs: VecDeque<Tab>) -> Tab {
+        let mut combined_tab_data: Vec<TableRow> = Vec::new();
+        for tab in tabs {
+            if let TabType::Combined = tab.tab_type {
+                // Skip the combined tab if it pre-exiests
+                continue;
+            }
+            for session in &tab.sessions {
+                combined_tab_data.append(&mut session.rows.clone());
+            }
+        }
+
+        combined_tab_data.sort_by(|row1, row2| {
+            return row1[LogEntryIndices::Date as usize].cmp(&row2[LogEntryIndices::Date as usize]);
+        });
+
+        let mut combined_tab = Tab::default();
+        let mut table = Table::default();
+        table.rows = combined_tab_data;
+        table.scroll_pos = table.rows.len() as f32;
+        table.identifier = "All".to_owned();
+        combined_tab.table = table.clone();
+        combined_tab.sessions.push(table);
+        combined_tab.current_session = 0;
+        combined_tab.tab_type = TabType::Combined;
+        combined_tab
     }
 
     pub async fn open_file() -> Result<Vec<LogLoadSuccess>, LogLoadError> {

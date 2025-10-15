@@ -25,7 +25,7 @@ lazy_static! {
 }
 
 pub enum LogEntryIndices {
-    _FileName,
+    FileName,
     // _ID,
     Date,
     // _PID,
