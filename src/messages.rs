@@ -1,13 +1,14 @@
 use core::f32;
 
-use crate::app::{LogLoadError, LogLoadSuccess, LogoscopeApp, SCROLL_END};
+use crate::app::{LogLoadError, LogLoadSuccess, LogoscopeApp, SCROLL_END, Window};
 use crate::parser::LogEntryIndices;
 use crate::tab::{Tab, TabType};
 use crate::theme::AppTheme;
 use copypasta::{ClipboardContext, ClipboardProvider};
-use iced::Task;
 use iced::event::Event;
 use iced::keyboard::key;
+use iced::widget::text_editor;
+use iced::{Task, window};
 use iced::{keyboard, mouse};
 use log::info;
 
@@ -38,6 +39,9 @@ pub enum Message {
     TextSizeIncrease,
     TextSizeDecrease,
     CombinedTabReloaded(Tab),
+    WindowOpened(window::Id),
+    WindowClosed(window::Id),
+    Edit(text_editor::Action, u8),
 }
 
 fn do_search(range: Vec<usize>, app: &mut LogoscopeApp) -> Task<Message> {
@@ -151,8 +155,10 @@ impl Message {
 
                 if TabType::Combined != app.tabs.front().unwrap().tab_type {
                     // The combined tab isn't added yet
-                    let mut combined_tab = Tab::default();
-                    combined_tab.tab_type = TabType::Combined;
+                    let combined_tab = Tab {
+                        tab_type: TabType::Combined,
+                        ..Default::default()
+                    };
                     app.tabs.push_front(combined_tab);
                 }
                 if let Some(combined_tab) = app.tabs.front_mut() {
@@ -356,8 +362,8 @@ impl Message {
                     return Task::none();
                 };
                 if current_tab.selected_rows.contains(&row_num) {
-                    current_tab.selected_rows.remove(&row_num);
-                    return Task::none();
+                    let (_, open) = window::open(window::Settings::default());
+                    return open.map(Message::WindowOpened);
                 }
 
                 if !multiselect_enabled {
@@ -398,6 +404,10 @@ impl Message {
                     }
 
                     match identifier {
+                        key::Named::Enter => {
+                            let (_, open) = window::open(window::Settings::default());
+                            return open.map(Message::WindowOpened);
+                        }
                         key::Named::ArrowDown => {
                             app.move_cursor(1);
                         }
@@ -458,33 +468,17 @@ impl Message {
                             }
                             app.close_tab(app.current_tab);
                         } else if key_char.to_lowercase() == "c" {
-                            // TODO
                             let Ok(mut clipboard_ctx) = ClipboardContext::new() else {
                                 return Task::none();
                             };
-                            let Some(current_tab) = app.get_current_tab() else {
-                                return Task::none();
-                            };
-                            let Some(current_session) = app.get_current_session() else {
-                                return Task::none();
-                            };
 
-                            let mut selected_text = String::new();
-                            for row_index in &current_tab.selected_rows {
-                                let Some(row) = current_session.rows.get(*row_index) else {
-                                    continue;
-                                };
-                                let Some(text) = row
-                                    .clone()
-                                    .into_iter()
-                                    .reduce(|acc, col| acc.to_owned() + " " + &col)
-                                else {
-                                    continue;
-                                };
-                                selected_text += &(text + "\n");
-                            }
-                            let Ok(_) = clipboard_ctx.set_contents(selected_text.clone()) else {
-                                log::error!("Failed to copy to clipboard: [{}]", selected_text);
+                            let Ok(_) =
+                                clipboard_ctx.set_contents(app.selected_rows_as_single_string())
+                            else {
+                                log::error!(
+                                    "Failed to copy to clipboard: [{}]",
+                                    app.selected_rows_as_single_string()
+                                );
                                 return Task::none();
                             };
                         } else if key_char.to_lowercase() == "=" {
@@ -505,6 +499,34 @@ impl Message {
             }
             Message::TextSizeDecrease => {
                 app.decrease_text_size();
+            }
+            Message::WindowOpened(window_id) => {
+                info!("Window opened: [{}]", window_id);
+                app.windows.insert(
+                    window_id,
+                    Window {
+                        window_id: app.windows.len() as u8,
+                        content: text_editor::Content::with_text(
+                            &app.selected_rows_as_single_string(),
+                        ),
+                    },
+                );
+            }
+            Message::WindowClosed(window_id) => {
+                info!("Window closed: [{}]", window_id);
+                app.windows.remove(&window_id);
+
+                if app.windows.is_empty() {
+                    return iced::exit();
+                }
+            }
+            Message::Edit(action, window_id) => {
+                for window in app.windows.values_mut() {
+                    if window.window_id == window_id {
+                        window.content.perform(action);
+                        break;
+                    }
+                }
             }
             Message::None => {}
         }
