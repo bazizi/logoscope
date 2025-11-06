@@ -11,16 +11,12 @@ pub const SESSION_IDENTIFIERS: [&str; 3] = [
 
 use crate::table::Table;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum TabType {
-    Combined, //
-    Normal,
-}
+    Combined,
 
-impl Default for TabType {
-    fn default() -> Self {
-        TabType::Normal
-    }
+    #[default]
+    Normal,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -47,11 +43,12 @@ impl Tab {
     }
 
     pub async fn tail(mut tab: Tab, filters: Vec<String>) -> Tab {
+        async_std::task::sleep(Duration::from_secs(1)).await;
+
         if let TabType::Combined = tab.tab_type {
             return tab;
         }
 
-        async_std::task::sleep(Duration::from_secs(1)).await;
         let Ok(metadata) = std::fs::metadata(&tab.file) else {
             return tab;
         };
@@ -159,6 +156,7 @@ impl Tab {
 
         current_session.scroll_pos = current_session.rows.len() as f32;
         tab.selected_rows.clear();
+        tab.current_session = tab.sessions.len().saturating_sub(1);
 
         Some(tab)
     }

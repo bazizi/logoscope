@@ -22,12 +22,9 @@ mod theme;
 pub fn main() -> iced::Result {
     env_logger::init();
     std::fs::create_dir_all(get_config_dir_path()).unwrap();
-    iced::application(
-        LogoscopeApp::title,
-        LogoscopeApp::update,
-        LogoscopeApp::view,
-    )
-    .subscription(LogoscopeApp::subscription)
-    .theme(LogoscopeApp::theme)
-    .run_with(LogoscopeApp::new)
+    iced::daemon(LogoscopeApp::new, LogoscopeApp::update, LogoscopeApp::view)
+        .title(LogoscopeApp::title)
+        .subscription(LogoscopeApp::subscription)
+        .theme(LogoscopeApp::theme)
+        .run()
 }
