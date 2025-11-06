@@ -1,19 +1,16 @@
 Features:
-- Open tab entry in new window
-- JSON & XML formatting in preview
-- Combined view
+- XML formatting in preview
 - Tooltips for:
     - Keyboard shortcuts
     - Textboxes
-- Multiple column select with preview
 - Automatic updates
-- Basic syntax highlighting
 - Multiple profiles
 
-Bug fixes:
-
-
 Done:
+- Search highlighting
+- Combined view
+- JSON formatting in preview
+- Open tab entry in new window
 - Transfer new instances to preloaded session
 - Verbosity filter
 - Searching
