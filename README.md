@@ -43,4 +43,4 @@ Log viewer <br/>
 * Ability to tail log files in real time
 
 ## Building
-To build from source, [install Rust](https://rust-lang.org/tools/install/) and run `cargo build --release`.
+To build from source, [install Rust](https://rust-lang.org/tools/install/) and run `cargo build --release --locked`.
