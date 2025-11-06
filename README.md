@@ -41,3 +41,6 @@ Log viewer <br/>
 * Searching log entries by multiple comma-separated keywords
 * Viewing entries combined from opened log files ordered by log date
 * Ability to tail log files in real time
+
+## Building
+To build from source, [install Rust](https://rust-lang.org/tools/install/) and run `cargo build --release`.
