@@ -2,8 +2,9 @@ use crate::parser::{LogEntryIndices, parse_log_by_path_async};
 use crate::theme::AppTheme;
 use crate::utils::get_config_dir_path;
 use async_std::task::sleep;
+use iced::widget::text_editor;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::env::args;
 use std::io::{Read, Write};
 use std::net::Shutdown;
@@ -18,13 +19,14 @@ pub const SCROLL_END: f32 = (ROW_BUFFER_SIZE / 4) as f32;
 pub const CONFIGS_FILE_NAME: &str = "config.json";
 pub const LOCALHOST_IPV4: &str = "127.0.0.1";
 const PORT_FILE: &str = "PORT";
+const SESSION_ALL_NAME: &str = "ALL";
 
 use crate::messages::Message;
 use crate::tab::{Tab, TabType};
 use crate::table::Table;
 use crate::table::TableRow;
 
-use iced::{Element, Subscription, event};
+use iced::{Element, Subscription, event, window};
 
 #[derive(Debug, Clone)]
 pub struct LogLoadError {}
@@ -33,6 +35,12 @@ pub struct LogLoadError {}
 pub struct LogLoadSuccess {
     pub table: Table,
     pub file_path: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct Window {
+    pub window_id: u8,
+    pub content: text_editor::Content,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,6 +57,8 @@ pub struct LogoscopeApp {
     pub text_size: f32,
     #[serde(skip_serializing, skip_deserializing)]
     pub tcp_listener: Option<Arc<std::net::TcpListener>>,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub windows: BTreeMap<window::Id, Window>,
 }
 
 impl LogoscopeApp {
@@ -130,37 +140,36 @@ impl LogoscopeApp {
 
     pub fn new() -> (Self, iced::Task<Message>) {
         let tabs_to_add = args().skip(1).collect::<Vec<_>>();
-        if let Ok(file_contents) = std::fs::read(get_config_dir_path().join(CONFIGS_FILE_NAME)) {
-            if let Ok(mut logoscope_app) =
+        if let Ok(file_contents) = std::fs::read(get_config_dir_path().join(CONFIGS_FILE_NAME))
+            && let Ok(mut logoscope_app) =
                 serde_json::from_str::<LogoscopeApp>(&String::from_utf8(file_contents).unwrap())
-            {
-                logoscope_app.init_net();
-                for file_path in &tabs_to_add {
-                    logoscope_app.tabs.push_back(Tab {
-                        file: std::path::PathBuf::from_str(file_path).unwrap(),
-                        ..Tab::default()
-                    });
-                }
-                log::info!("Loaded config: [{:?}", logoscope_app);
-
-                let files_to_open: Vec<_> = logoscope_app
-                    .tabs
-                    .iter()
-                    .map(|tab| tab.file.clone())
-                    .collect();
-                log::info!("Loading files from last session: [{:?}]", files_to_open);
-                // Clear tabs as they'll be reopened fresh
-                logoscope_app.tabs.clear();
-                logoscope_app.loading_in_progress = !files_to_open.is_empty();
-
-                return (
-                    logoscope_app,
-                    iced::Task::perform(
-                        LogoscopeApp::open_files(files_to_open),
-                        Message::FileOpened,
-                    ),
-                );
+        {
+            logoscope_app.init_net();
+            for file_path in &tabs_to_add {
+                logoscope_app.tabs.push_back(Tab {
+                    file: std::path::PathBuf::from_str(file_path).unwrap(),
+                    ..Tab::default()
+                });
             }
+            log::info!("Loaded config: [{:?}", logoscope_app);
+
+            let files_to_open: Vec<_> = logoscope_app
+                .tabs
+                .iter()
+                .map(|tab| tab.file.clone())
+                .collect();
+            log::info!("Loading files from last session: [{:?}]", files_to_open);
+            // Clear tabs as they'll be reopened fresh
+            logoscope_app.tabs.clear();
+            logoscope_app.loading_in_progress = !files_to_open.is_empty();
+
+            let (_, open) = window::open(window::Settings::default());
+
+            return (
+                logoscope_app,
+                iced::Task::perform(LogoscopeApp::open_files(files_to_open), Message::FileOpened)
+                    .chain(open.map(Message::WindowOpened)),
+            );
         }
 
         log::info!("Loading app");
@@ -182,17 +191,22 @@ impl LogoscopeApp {
             tcp_port: None,
             text_size: 14.,
             tcp_listener: None,
+            windows: BTreeMap::new(),
         };
 
         logoscope_app.init_net();
-        (logoscope_app, iced::Task::none())
+        let (_, open) = window::open(window::Settings::default());
+        (logoscope_app, open.map(Message::WindowOpened))
     }
-    pub fn title(&self) -> String {
+    pub fn title(&self, _window: window::Id) -> String {
         "Logoscope".to_owned()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        event::listen().map(Message::Event)
+        Subscription::batch([
+            event::listen().map(Message::Event),
+            window::close_events().map(Message::WindowClosed),
+        ])
     }
 
     pub fn get_current_tab(&self) -> Option<&Tab> {
@@ -253,19 +267,22 @@ impl LogoscopeApp {
                 continue;
             }
             for session in &tab.sessions {
+                if session.identifier.to_lowercase() == SESSION_ALL_NAME.to_lowercase() {
+                    continue;
+                }
                 combined_tab_data.append(&mut session.rows.clone());
             }
         }
 
         combined_tab_data.sort_by(|row1, row2| {
-            return row1[LogEntryIndices::Date as usize].cmp(&row2[LogEntryIndices::Date as usize]);
+            row1[LogEntryIndices::Date as usize].cmp(&row2[LogEntryIndices::Date as usize])
         });
 
         let mut combined_tab = Tab::default();
         let mut table = Table::default();
         table.rows = combined_tab_data;
         table.scroll_pos = table.rows.len() as f32;
-        table.identifier = "All".to_owned();
+        table.identifier = SESSION_ALL_NAME.to_owned();
         combined_tab.table = table.clone();
         combined_tab.sessions.push(table);
         combined_tab.current_session = 0;
@@ -343,15 +360,64 @@ impl LogoscopeApp {
         self.current_tab = self.current_tab.clamp(0, self.tabs.len().saturating_sub(1));
     }
 
+    pub fn beatify_enclosed_json(log: &str) -> String {
+        if let (Some(first_curly), Some(last_curly)) = (log.find('{'), log.rfind('}')) {
+            let json_part = &log[first_curly..last_curly + 1];
+            if let Ok(value) =
+                serde_json::from_str::<serde_json::Value>(json_part.to_string().as_str())
+                && let Ok(pretty_str) = serde_json::to_string_pretty(&value)
+            {
+                return log[0..first_curly].to_owned() + &pretty_str + &log[last_curly..log.len()];
+            }
+        }
+        log.to_owned()
+    }
+
+    pub fn selected_rows_as_single_string(&self) -> String {
+        let Some(current_tab) = self.get_current_tab() else {
+            return String::new();
+        };
+        let Some(current_session) = self.get_current_session() else {
+            return String::new();
+        };
+
+        let mut selected_text = String::new();
+        for row_index in &current_tab.selected_rows {
+            let Some(row) = current_session.rows.get(*row_index) else {
+                continue;
+            };
+            let Some(text) = row
+                .clone()
+                .into_iter()
+                .reduce(|acc, col| acc.to_owned() + " " + &col)
+            else {
+                continue;
+            };
+            selected_text += &(text + "\n");
+        }
+
+        LogoscopeApp::beatify_enclosed_json(&selected_text)
+    }
+
     pub fn update(&mut self, message: Message) -> iced::Task<Message> {
         message.handle(self)
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self, window_id: window::Id) -> Element<'_, Message> {
+        if let Some(curr_window) = self.windows.get(&window_id)
+            && (curr_window.window_id != 0)
+        {
+            return iced::widget::scrollable(
+                iced::widget::text_editor(&curr_window.content)
+                    .on_action(|action| Message::Edit(action, curr_window.window_id)),
+            )
+            .into();
+        }
+
         crate::view::view(self)
     }
 
-    pub fn theme(&self) -> iced::Theme {
+    pub fn theme(&self, _window: window::Id) -> iced::Theme {
         self.theme.clone().into()
     }
 

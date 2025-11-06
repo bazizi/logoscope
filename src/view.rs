@@ -1,7 +1,7 @@
 use crate::app::{LogoscopeApp, ROW_BUFFER_SIZE, SCROLL_END};
 use crate::messages::Message;
 use crate::parser::LogEntryIndices;
-use crate::tab::{Tab, TabType};
+use crate::tab::TabType;
 use crate::theme::AppTheme;
 
 use iced::widget::toggler;
@@ -11,11 +11,12 @@ use iced::{Background, alignment};
 use iced::{
     Element, Font, Length,
     widget::{
-        button, column, horizontal_space, keyed_column, row, span, text, text_input, vertical_space,
+        button, column, keyed_column, row, space::horizontal, space::vertical, span, text,
+        text_input,
     },
 };
 
-use crate::table::{self, Table};
+use crate::table::Table;
 
 fn get_session_list(app: &LogoscopeApp) -> Vec<String> {
     let Some(current_tab) = app.get_current_tab() else {
@@ -29,7 +30,7 @@ fn get_session_list(app: &LogoscopeApp) -> Vec<String> {
         .collect::<Vec<String>>()
 }
 
-fn view_top_navbar(app: &LogoscopeApp) -> Element<Message> {
+fn view_top_navbar(app: &LogoscopeApp) -> Element<'_, Message> {
     let session_list = get_session_list(app);
 
     let current_session_id = app
@@ -41,12 +42,12 @@ fn view_top_navbar(app: &LogoscopeApp) -> Element<Message> {
         toggler(app.multiselect_enabled)
             .label("Multiselect")
             .on_toggle(Message::ToggleMultiselect),
-        horizontal_space().width(Length::FillPortion(5)),
+        horizontal().width(Length::FillPortion(5)),
         // Tail
         toggler(app.tail_enabled)
             .label("Tail")
             .on_toggle(Message::ToggleTail),
-        horizontal_space().width(Length::FillPortion(5)),
+        horizontal().width(Length::FillPortion(5)),
         // Session selection
         text("Session: ").align_y(alignment::Vertical::Center),
         button(text("<")).on_press(Message::PrevSession),
@@ -63,13 +64,13 @@ fn view_top_navbar(app: &LogoscopeApp) -> Element<Message> {
             Message::SessionChanged(session_list.len().saturating_sub(1))
         }),
         button(text(">")).on_press(Message::NextSession),
-        horizontal_space().width(Length::FillPortion(5)),
+        horizontal().width(Length::FillPortion(5)),
         // Filter
         text("Filter: "),
         text_input("Comma-separated keywords...", &app.filters.join(","))
             .width(Length::FillPortion(20))
             .on_input(Message::FilterChanged),
-        horizontal_space().width(Length::FillPortion(5)),
+        horizontal().width(Length::FillPortion(5)),
         // Search
         text("Search: "),
         button(text("<")).on_press(Message::PrevSearch),
@@ -77,12 +78,12 @@ fn view_top_navbar(app: &LogoscopeApp) -> Element<Message> {
             .width(Length::FillPortion(20))
             .on_input(Message::SearchChanged),
         button(text(">")).on_press(Message::NextSearch),
-        horizontal_space().width(Length::FillPortion(5)),
+        horizontal().width(Length::FillPortion(5)),
         // Text size
         button("-").on_press(Message::TextSizeDecrease),
         text(" Zoom ").align_y(alignment::Vertical::Center),
         button("+").on_press(Message::TextSizeIncrease),
-        horizontal_space().width(Length::FillPortion(5)),
+        horizontal().width(Length::FillPortion(5)),
         // Theme selection
         text("Theme: ").align_y(alignment::Vertical::Center),
         button(text("<")).on_press(Message::PrevTheme),
@@ -92,13 +93,9 @@ fn view_top_navbar(app: &LogoscopeApp) -> Element<Message> {
     .into()
 }
 
-fn view_tabs(app: &LogoscopeApp) -> Element<Message> {
-    row(app.tabs.iter().enumerate().filter_map(|(i, tab)| {
-        let is_combined_tab = if let TabType::Combined = tab.tab_type {
-            true
-        } else {
-            false
-        };
+fn view_tabs(app: &LogoscopeApp) -> Element<'_, Message> {
+    row(app.tabs.iter().enumerate().map(|(i, tab)| {
+        let is_combined_tab = matches!(tab.tab_type, TabType::Combined);
 
         let file_name = if is_combined_tab {
             "Combined"
@@ -110,25 +107,22 @@ fn view_tabs(app: &LogoscopeApp) -> Element<Message> {
                 .unwrap_or_default()
         };
 
-        Some(
-            row![
-                button(file_name)
-                    .style(move |theme: &iced::Theme, status| {
-                        if app.get_current_tab().is_some() && tab == app.get_current_tab().unwrap()
-                        {
-                            button::primary(theme, status)
-                        } else {
-                            button::secondary(theme, status)
-                        }
-                    })
-                    .on_press(Message::TabChanged(i)),
-                button("X")
-                    .on_press(Message::TabClosed(i))
-                    .style(button::danger),
-                horizontal_space().width(Length::Fixed(15.)),
-            ]
-            .into(),
-        )
+        row![
+            button(file_name)
+                .style(move |theme: &iced::Theme, status| {
+                    if app.get_current_tab().is_some() && tab == app.get_current_tab().unwrap() {
+                        button::primary(theme, status)
+                    } else {
+                        button::secondary(theme, status)
+                    }
+                })
+                .on_press(Message::TabChanged(i)),
+            button("X")
+                .on_press(Message::TabClosed(i))
+                .style(button::danger),
+            horizontal().width(Length::Fixed(15.)),
+        ]
+        .into()
     }))
     .into()
 }
@@ -137,7 +131,7 @@ fn highlight_search_matches<'a>(
     text: &'a str,
     keywords: &Vec<String>,
     text_size: f32,
-) -> Element<'a, Message> {
+) -> iced::widget::text::Rich<'a, (), Message> {
     // A mutable vector to hold all start and end positions of found keywords.
     let mut keyword_positions_in_text = vec![];
 
@@ -185,7 +179,7 @@ fn highlight_search_matches<'a>(
         merged_positions.push((current_start, current_end));
     }
 
-    let mut text_spans = vec![];
+    let mut text_spans: Vec<iced::widget::text::Span<_, _>> = vec![];
     let mut prev_span_end = 0;
 
     // Create the spans for the rich text element based on the merged positions.
@@ -209,14 +203,13 @@ fn highlight_search_matches<'a>(
     }
 
     rich_text(text_spans)
-        .wrapping(text::Wrapping::None)
+        //.wrapping(text::Wrapping::None)
         .size(text_size)
-        .into()
 }
 
-fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
+fn view_data_rows(app: &LogoscopeApp) -> Element<'_, Message> {
     let Some(current_session) = app.get_current_session() else {
-        return horizontal_space().into();
+        return horizontal().into();
     };
 
     // Have to invert the scroll position to reverse the slider rendering
@@ -225,7 +218,7 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
         .len()
         .saturating_sub(current_session.scroll_pos as usize);
     let Some(current_tab) = app.get_current_tab() else {
-        return horizontal_space().into();
+        return horizontal().into();
     };
 
     let selected_rows = &app.get_current_tab().unwrap().selected_rows;
@@ -245,10 +238,10 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
                     {
                         button::Style {
                             background: Some(Background::Color(iced::Color {
-                                r: 255.,
-                                g: 117.,
-                                b: 24.,
-                                a: 255.,
+                                r: 1.,
+                                g: 117. / 255.,
+                                b: 24. / 255.,
+                                a: 1.,
                             })),
                             ..button::Style::default()
                         }
@@ -263,9 +256,9 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
                     {
                         button::Style {
                             background: Some(Background::Color(iced::Color {
-                                r: 255.,
-                                g: 255.,
-                                a: 255.,
+                                r: 1.,
+                                g: 1.,
+                                a: 1.,
                                 ..iced::Color::default()
                             })),
                             ..button::Style::default()
@@ -317,7 +310,7 @@ fn view_data_rows(app: &LogoscopeApp) -> Element<Message> {
     .into()
 }
 
-pub fn view(app: &LogoscopeApp) -> Element<Message> {
+pub fn view(app: &LogoscopeApp) -> Element<'_, Message> {
     let new_tab_button = button(if !app.loading_in_progress {
         text("+")
     } else {
@@ -330,7 +323,7 @@ pub fn view(app: &LogoscopeApp) -> Element<Message> {
     })
     .style(button::success);
 
-    let navbar_bottom_padding = vertical_space().height(Length::Fixed(3.));
+    let navbar_bottom_padding = vertical().height(Length::Fixed(3.));
 
     if app.tabs.is_empty() {
         return column![view_top_navbar(app), navbar_bottom_padding, new_tab_button].into();
