@@ -360,7 +360,31 @@ impl LogoscopeApp {
         self.current_tab = self.current_tab.clamp(0, self.tabs.len().saturating_sub(1));
     }
 
-    pub fn beatify_enclosed_json(log: &str) -> String {
+    fn beatify_enclosed_xml(mut log: &str) -> String {
+        if let (Some(first_xml_tag), Some(last_xml_tag)) = (log.find('<'), log.rfind('>')) {
+            log = &log[first_xml_tag..last_xml_tag + 1];
+        }
+        let mut reader = quick_xml::Reader::from_str(log);
+
+        let mut writer = quick_xml::Writer::new_with_indent(Vec::new(), b' ', 2);
+
+        loop {
+            let ev = reader.read_event();
+
+            match ev {
+                Ok(quick_xml::events::Event::Eof) => break, // exits the loop when reaching end of file
+                Ok(event) => writer.write_event(event),
+                Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
+            }
+            .expect("Failed to parse XML");
+        }
+
+        std::str::from_utf8(&*writer.into_inner())
+            .expect("Failed to convert a slice of bytes to a string slice")
+            .to_string()
+    }
+
+    fn beatify_enclosed_json(log: &str) -> String {
         if let (Some(first_curly), Some(last_curly)) = (log.find('{'), log.rfind('}')) {
             let json_part = &log[first_curly..last_curly + 1];
             if let Ok(value) =
@@ -370,7 +394,11 @@ impl LogoscopeApp {
                 return log[0..first_curly].to_owned() + &pretty_str + &log[last_curly..log.len()];
             }
         }
-        log.to_owned()
+        log.to_string()
+    }
+
+    pub fn beatify(log: &str) -> String {
+        LogoscopeApp::beatify_enclosed_xml(&LogoscopeApp::beatify_enclosed_json(log))
     }
 
     pub fn selected_rows_as_single_string(&self) -> String {
@@ -396,7 +424,7 @@ impl LogoscopeApp {
             selected_text += &(text + "\n");
         }
 
-        LogoscopeApp::beatify_enclosed_json(&selected_text)
+        LogoscopeApp::beatify(&selected_text)
     }
 
     pub fn update(&mut self, message: Message) -> iced::Task<Message> {

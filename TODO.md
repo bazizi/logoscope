@@ -1,12 +1,13 @@
 Features:
-- XML formatting in preview
+- Hyperlinks
+- Automatic updates
 - Tooltips for:
     - Keyboard shortcuts
     - Textboxes
-- Automatic updates
 - Multiple profiles
 
 Done:
+- XML formatting in preview
 - Search highlighting
 - Combined view
 - JSON formatting in preview
