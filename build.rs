@@ -6,7 +6,7 @@ fn main() {
     res.compile().unwrap();
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "windows"))]
 fn main() {
     // no op
 }
