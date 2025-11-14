@@ -3,6 +3,7 @@ use crate::theme::AppTheme;
 use crate::utils::get_config_dir_path;
 use async_std::task::sleep;
 use iced::widget::text_editor;
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use std::env::args;
@@ -360,11 +361,14 @@ impl LogoscopeApp {
         self.current_tab = self.current_tab.clamp(0, self.tabs.len().saturating_sub(1));
     }
 
-    fn beatify_enclosed_xml(mut log: &str) -> String {
-        if let (Some(first_xml_tag), Some(last_xml_tag)) = (log.find('<'), log.rfind('>')) {
-            log = &log[first_xml_tag..last_xml_tag + 1];
-        }
-        let mut reader = quick_xml::Reader::from_str(log);
+    fn beautify_enclosed_xml(mut log: &str) -> String {
+        let (Some(first_xml_tag), Some(last_xml_tag)) = (log.find('<'), log.rfind('>')) else {
+            return log.to_string();
+        };
+
+        let xml_chunk = &log[first_xml_tag..last_xml_tag + 1];
+        info!("Formatting xml [{}]", xml_chunk);
+        let mut reader = quick_xml::Reader::from_str(xml_chunk);
 
         let mut writer = quick_xml::Writer::new_with_indent(Vec::new(), b' ', 2);
 
@@ -379,12 +383,13 @@ impl LogoscopeApp {
             .expect("Failed to parse XML");
         }
 
-        std::str::from_utf8(&*writer.into_inner())
-            .expect("Failed to convert a slice of bytes to a string slice")
-            .to_string()
+        log[0..first_xml_tag].to_owned()
+            + std::str::from_utf8(&writer.into_inner())
+                .expect("Failed to convert a slice of bytes to a string slice")
+            + &log[last_xml_tag + 1..log.len()]
     }
 
-    fn beatify_enclosed_json(log: &str) -> String {
+    fn beautify_enclosed_json(log: &str) -> String {
         if let (Some(first_curly), Some(last_curly)) = (log.find('{'), log.rfind('}')) {
             let json_part = &log[first_curly..last_curly + 1];
             if let Ok(value) =
@@ -397,8 +402,8 @@ impl LogoscopeApp {
         log.to_string()
     }
 
-    pub fn beatify(log: &str) -> String {
-        LogoscopeApp::beatify_enclosed_xml(&LogoscopeApp::beatify_enclosed_json(log))
+    pub fn beautify(log: &str) -> String {
+        LogoscopeApp::beautify_enclosed_xml(&LogoscopeApp::beautify_enclosed_json(log))
     }
 
     pub fn selected_rows_as_single_string(&self) -> String {
@@ -424,7 +429,7 @@ impl LogoscopeApp {
             selected_text += &(text + "\n");
         }
 
-        LogoscopeApp::beatify(&selected_text)
+        LogoscopeApp::beautify(&selected_text)
     }
 
     pub fn update(&mut self, message: Message) -> iced::Task<Message> {
